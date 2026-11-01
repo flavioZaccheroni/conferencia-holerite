@@ -164,6 +164,12 @@
   .trow { display:grid; grid-template-columns:40px 1fr 92px 92px 64px auto auto auto; gap:6px; align-items:center; margin:6px 0; }
   .trow input[type=color] { padding:0; height:40px; }
   @media (max-width:560px) { .trow { grid-template-columns:40px 1fr 1fr; } }
+  .rvrow .chk { flex:1 1 220px; min-width:0; }
+  .rvrow .chk input[type=datetime-local] { width:auto; flex:1; min-width:0; }
+  .rvrow { display:grid; gap:6px; }
+  .rvtop { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+  .rvPapel { width:auto; min-height:40px; padding:6px 10px; font-weight:700; }
+  .rvComp { color:var(--pri); font-weight:700; font-size:.76rem; white-space:nowrap; }
   .mchip { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:99px; font-size:.82rem; font-weight:600; background:var(--card2); }
   .mchip button { border:0; background:none; color:var(--neg); cursor:pointer; padding:0 2px; }
   .gal { display:grid; grid-template-columns: repeat(auto-fill, minmax(150px,1fr)); gap:12px; }
@@ -420,11 +426,11 @@
         <button class="sec" id="btnFill">Preencher dias normais vazios</button>
         <button class="sec" id="btnClear">Limpar ponto</button>
       </div>
-      <p class="hint">Depois ajuste só os dias diferentes (horas extras, noite, faltas, feriados). Turno que passa da meia-noite: a saída menor que a entrada conta como dia seguinte.</p>
+      <p class="hint">Depois ajuste só os dias diferentes (horas extras, noite, faltas, feriados). Se você só bate entrada e saída, deixe o intervalo em branco. Turno que passa da meia-noite: a saída menor que a entrada conta como dia seguinte.</p>
     </div>
     <div class="card scroll">
       <table id="tbPonto">
-        <thead><tr><th>Dia</th><th>Tipo</th><th>Entrada</th><th>Saída int.</th><th>Volta</th><th>Saída</th><th>Apurado</th></tr></thead>
+        <thead><tr><th>Dia</th><th>Tipo</th><th>Entrada</th><th>Saída</th><th>Intervalo: saída</th><th>Intervalo: volta</th><th>Apurado</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -603,12 +609,13 @@ function dateRange() {
 
 function renderDays() {
   const c = cfg(), tb = document.querySelector('#tbPonto tbody'); tb.innerHTML = '';
+  for (const k in store.days) { const d = store.days[k]; if (d.s1 && !d.e2 && !d.s2) { d.s2 = d.s1; d.s1 = ''; } } // formato antigo: dia só com entrada e saída
   for (const key of dateRange()) {
     const d = parseKey(key), st = store.days[key] || {}, t = st.t || autoType(key, c);
     const tr = document.createElement('tr'); tr.className = t; tr.dataset.key = key;
     tr.innerHTML = `<td>${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${DOW[d.getDay()]}</td>
       <td><select data-f="t">${Object.entries(TYPES).map(([k, v]) => `<option value="${k}"${k === t ? ' selected' : ''}>${v}</option>`).join('')}</select></td>
-      ${[['e1', 'Entrada'], ['s1', 'Saída p/ intervalo'], ['e2', 'Volta'], ['s2', 'Saída']].map(([f, nome]) => `<td data-l="${nome}"><input type="time" data-f="${f}" value="${st[f] || ''}"></td>`).join('')}
+      ${[['e1', 'Entrada'], ['s2', 'Saída'], ['s1', 'Intervalo: saída (se houver)'], ['e2', 'Intervalo: volta (se houver)']].map(([f, nome]) => `<td data-l="${nome}"><input type="time" data-f="${f}" value="${st[f] || ''}"></td>`).join('')}
       <td class="sum"></td>`;
     tb.appendChild(tr);
   }
@@ -620,7 +627,8 @@ function dayCalc(key, c) {
     cat: { n: { m: 0, nt: 0 }, h50: { m: 0, nt: 0 }, h75: { m: 0, nt: 0 }, f: { m: 0, nt: 0 }, h100: { m: 0, nt: 0 } } };
   if (type === 'falta' || type === 'atestado') return r;
   const iv = []; let last = -1;
-  for (const [a, b] of [[st.e1, st.s1], [st.e2, st.s2]]) {
+  const pares = (st.s1 && st.e2) ? [[st.e1, st.s1], [st.e2, st.s2]] : [[st.e1, st.s2 || st.s1]]; // sem intervalo batido: da entrada direto para a saída
+  for (const [a, b] of pares) {
     if (!a || !b) continue;
     let s = hm(a), e = hm(b); if (e <= s) e += 1440;
     while (s < last) { s += 1440; e += 1440; }
@@ -628,7 +636,7 @@ function dayCalc(key, c) {
   }
   if (iv.length) { r.first = iv[0][0]; r.last = iv[iv.length - 1][1]; } // marcações reais (para a interjornada)
   if (c.hs && type === 'normal') { // tolerância por marcação: batida perto do horário contratual vale o horário
-    const hp = [[c.hs[0], c.hs[1]], [c.hs[2], c.hs[3]]];
+    const hp = pares.length === 2 ? [[c.hs[0], c.hs[1]], [c.hs[2], c.hs[3]]] : [[c.hs[0], c.hs[3]]];
     iv.forEach((p, i) => { if (!hp[i]) return; [0, 1].forEach(j => { const tod = ((p[j] % 1440) + 1440) % 1440; if (Math.abs(tod - hp[i][j]) <= c.tolP) p[j] += hp[i][j] - tod; }); });
   }
   const ttd = c.esc === 'cal' && c.intDesc ? turnoAt(key) : null; // intervalo pré-assinalado: tira do meio do turno
@@ -1145,7 +1153,7 @@ function turnoAt(key) {
 const fmtMin = m => { m = ((m % 1440) + 1440) % 1440; return pad(Math.floor(m / 60)) + ':' + pad(m % 60); };
 function punchesFromTurno(t) {
   const ini = hm(t.ini); let dur = hm(t.fim) - ini; if (!(dur > 0)) dur += 1440;
-  const int = $('c_intDesc').checked ? (t.int || 0) : 0; if (!int) return [t.ini, t.fim, '', ''];
+  const int = $('c_intDesc').checked ? (t.int || 0) : 0; if (!int) return [t.ini, '', '', t.fim];
   const first = Math.floor((dur - int) / 2);
   return [t.ini, fmtMin(ini + first), fmtMin(ini + first + int), t.fim];
 }
@@ -1613,8 +1621,8 @@ function detectarMarcacoes(texto, per) {
   };
   for (const linha of texto.split('\n')) {
     if (/assinad|signat|\bdata:\s*\d{2}\/\d{2}\/\d{4}/i.test(linha)) continue; // carimbos de assinatura
-    let m, achou = false; const re = /(\d{2})\/(\d{2})\/(\d{4})\D{0,4}([01]?\d|2[0-3])[:.]([0-5]\d)(?:[:.]([0-5]\d))?/g;
-    while ((m = re.exec(linha))) { add(m[3], m[2], m[1], m[4], m[5], m[6]); achou = true; }
+    let m, achou = false; const re = /(\d{1,2})\s*\/\s*([\d\s]{1,6}?)\s*\/\s*(\d{4})\D{0,4}([01]?\d|2[0-3])\s*[:.]\s*([0-5]\d)(?:\s*[:.]\s*([0-5]\d))?/g;
+    while ((m = re.exec(linha))) { let mes = m[2].replace(/\s/g, ''); if (mes.length > 2) mes = mes.slice(-2); add(m[3], mes, m[1], m[4], m[5], m[6]); achou = true; } // o mês pode vir com lixo no meio: fica com os 2 últimos dígitos
     if (achou) continue;
     const dm = linha.match(/\b(\d{2})\/(\d{2})(?:\/(\d{2,4}))?\b/); if (!dm) continue;
     const horas = [...linha.matchAll(/\b([01]?\d|2[0-3]):([0-5]\d)\b/g)];
@@ -1656,34 +1664,109 @@ async function lerMarcacoes(files) {
 
 function revisarMarcacoes(res) {
   const agora = new Date(), iso = `${keyOf(agora)}T${pad(agora.getHours())}:${pad(agora.getMinutes())}:00`;
-  const row = (t, dia, src) => `<div class="mrow" data-dia="${dia || ''}" data-src="${src}"><label class="chk" style="gap:8px"><input type="checkbox" checked><input type="datetime-local" step="1" value="${t}"></label></div>`;
+  const row = (t, dia, src, papel) => {
+    const estranha = !dia && Math.abs(+t.slice(0, 4) - new Date().getFullYear()) > 1; // a leitura pode errar o ano
+    return `<div class="mrow rvrow" data-dia="${dia || ''}" data-src="${src}"><div class="rvtop"><label class="chk" style="gap:8px"><input type="checkbox"${estranha ? '' : ' checked'}><input type="datetime-local" step="1" value="${t}"></label>${dia ? '' : `<select class="rvPapel" aria-label="Tipo da marcação">${PAPEIS.map(([v, n]) => `<option value="${v}"${v === (papel || 'E') ? ' selected' : ''}>${n}</option>`).join('')}</select>`}</div>${dia ? '' : '<small class="rvComp"></small>'}${estranha ? '<small class="bad">⚠ data fora do esperado: corrija ou deixe desmarcada</small>' : ''}</div>`;
+  };
+  const sug = papeisSugeridos(res.flatMap(r => r.ts).filter(q => !q.dia));
   const todos = res.flatMap(r => r.ts), total = todos.length;
+  const avisoEscala = $('c_esc').value === 'sem' && todos.some(q => !q.dia && [0, 6].includes(new Date(q.t).getDay()))
+    ? '<p class="hint" style="margin:6px 0">⚠ Seu cadastro está como <b>semana fixa</b> (segunda a sexta): sábado e domingo trabalhados contam como folga/DSR. Se você trabalha em escala rotativa (como 4x2 ou 12x36), abra <b>Contrato → Escala de trabalho</b> e escolha Ciclo ou Calendário.</p><button class="sec" id="rvEscala" style="margin-bottom:6px">Trabalho em escala rotativa: ajustar agora</button>' : '';
   const hor = (res.find(r => r.hor) || {}).hor, per = (res.find(r => r.per) || {}).per, tipos = Object.assign({}, ...res.map(r => r.tipos || {})), nTipos = Object.keys(tipos).length;
   modal(`<h2>Confira as marcações</h2>
-    <p class="hint" style="margin:0 0 8px">${total ? `Encontrei <b>${total}</b> marcação(ões). Corrija data/hora se a leitura errou e desmarque o que não for marcação.` : 'Não encontrei data/hora automaticamente. Informe abaixo.'}</p>
+    <p class="hint" style="margin:0 0 8px">${total ? `Encontrei <b>${total}</b> marcação(ões). <b>Escolha o tipo de cada uma</b> (a foto sozinha não diz se é entrada ou saída), corrija data/hora se a leitura errou e desmarque o que não for marcação.` : 'Não encontrei data/hora automaticamente. Informe abaixo.'}</p>
     ${res.map(r => r.erro ? `<p class="hint bad">${esc(r.nome)}: ${esc(r.erro)}</p>` : r.ts.length ? `<p class="hint" style="margin:6px 0 0">${esc(r.nome)}</p>` : `<p class="hint warn">${esc(r.nome)}: nada reconhecido.</p>`).join('')}
     ${per ? `<label class="chk" style="margin:8px 0"><input type="checkbox" id="rvPer" checked> Ajustar o período do ponto para ${per.ini.split('-').reverse().join('/')} a ${per.fim.split('-').reverse().join('/')} (o do documento)</label>` : ''}
     ${hor ? `<label class="chk" style="margin:6px 0"><input type="checkbox" id="rvHor" checked> Usar o horário contratual do cartão (${hor.join(' · ')}) para a tolerância das batidas</label>` : ''}
     ${nTipos ? `<p class="hint">Também encontrei ${nTipos} dia(s) de folga/DSR/feriado; serão marcados no ponto.</p>` : ''}
-    <div id="rvRows" style="max-height:45vh;overflow:auto">${todos.map(p => row(p.t, p.dia, 'foto')).join('')}${total ? '' : row(iso, '', 'manual')}</div>
+    ${avisoEscala}<div id="rvRows" style="max-height:45vh;overflow:auto">${todos.map(p => row(p.t, p.dia, 'foto', sug[p.t])).join('')}${total ? '' : row(iso, '', 'manual', 'E')}</div>
     <div class="bar"><button class="sec" id="rvMais">＋ Outra marcação</button></div>
     ${res.some(r => r.txt) ? `<details style="margin-top:8px"><summary class="hint">Ver texto reconhecido</summary><pre style="white-space:pre-wrap;font-size:.72rem">${esc(res.map(r => r.txt || '').join('\n---\n'))}</pre></details>` : ''}
     <div class="bar"><button class="act" id="rvOk">Adicionar ao ponto</button><button class="sec" id="rvNo">Cancelar</button></div>`, () => {
-    $('rvMais').onclick = () => $('rvRows').insertAdjacentHTML('beforeend', row(iso, '', 'manual'));
+    // mostra, ao lado de cada marcação solta (foto ou manual), a competência para onde ela vai
+    const atualizarRotulos = () => {
+      const linhas = [...document.querySelectorAll('#rvRows .mrow')].filter(r => !r.dataset.dia);
+      linhas.forEach(r => { const sp = r.querySelector('.rvComp'); if (sp) sp.textContent = ''; });
+      const ps = linhas.map(r => { const v = r.querySelector('[type=datetime-local]').value, t = v && (v.length === 16 ? v + ':00' : v); return { r, ms: t ? new Date(t).getTime() : NaN, t, role: r.querySelector('.rvPapel').value, ok: r.querySelector('[type=checkbox]').checked }; })
+        .filter(p => p.ok && !isNaN(p.ms)).sort((a, b) => a.ms - b.ms);
+      for (const d of montarDias(ps)) { const k = competenciaDe(d.key), txt = '→ ' + fmtMes(k) + (store.meses[k] ? '' : ' (nova)'); d.ps.forEach(p => { const sp = p.r.querySelector('.rvComp'); if (sp) sp.textContent = txt; }); }
+    };
+    if ($('rvEscala')) $('rvEscala').onclick = () => { $('c_esc').value = 'cal'; readCfgInto(); save(); renderDays(); updateSums(); $('rvEscala').previousElementSibling.remove(); $('rvEscala').outerHTML = '<p class="hint ok" style="margin:6px 0">✔ Escala rotativa ativada: dias com marcação contam como trabalhados.</p>'; };
+    $('rvRows').addEventListener('input', atualizarRotulos); $('rvRows').addEventListener('change', atualizarRotulos); atualizarRotulos();
+    $('rvMais').onclick = () => { const ult = [...document.querySelectorAll('#rvRows .rvPapel')].pop(); $('rvRows').insertAdjacentHTML('beforeend', row(iso, '', 'manual', ult && ult.value === 'E' ? 'S' : 'E')); atualizarRotulos(); };
     $('rvNo').onclick = closeModal;
     $('rvOk').onclick = () => {
-      const novas0 = [...document.querySelectorAll('#rvRows .mrow')]; // lê a lista antes de qualquer troca de competência
+      const origem = store.mesAtivo;
+      const linhas = [...document.querySelectorAll('#rvRows .mrow')].filter(r => r.querySelector('[type=checkbox]').checked) // lê a lista antes de qualquer troca de competência
+        .map(r => ({ v: r.querySelector('[type=datetime-local]').value, dia: r.dataset.dia || undefined, fonte: r.dataset.src, papel: (r.querySelector('.rvPapel') || {}).value })).filter(x => x.v)
+        .map(x => ({ ...x, t: x.v.length === 16 ? x.v + ':00' : x.v }));
       if (per && $('rvPer') && $('rvPer').checked) garantirMes(per); // documento de outro mês vai para a competência dele
       if (hor && $('rvHor') && $('rvHor').checked) hor.forEach((v, i) => { $('c_h' + (i + 1)).value = v; store.cfg['c_h' + (i + 1)] = v; });
-      const novas = novas0.filter(r => r.querySelector('[type=checkbox]').checked)
-        .map(r => ({ v: r.querySelector('[type=datetime-local]').value, dia: r.dataset.dia || undefined, fonte: r.dataset.src })).filter(x => x.v);
-      for (const x of novas) { const t = x.v.length === 16 ? x.v + ':00' : x.v; if (!store.marc.some(m => m.t === t)) store.marc.push({ id: uid(), t, dia: x.dia, fonte: x.fonte }); }
+      const comDia = linhas.filter(x => x.dia), soltas = linhas.filter(x => !x.dia);
+      for (const x of comDia) if (!store.marc.some(m => m.t === x.t)) store.marc.push({ id: uid(), t: x.t, dia: x.dia, fonte: x.fonte });
       if (per && $('rvPer') && $('rvPer').checked) { $('c_ini').value = per.ini; $('c_fim').value = per.fim; store.cfg.c_ini = per.ini; store.cfg.c_fim = per.fim; }
       for (const [k, t] of Object.entries(tipos)) { store.days[k] = store.days[k] || {}; store.days[k].t = t; }
       for (const k of Object.keys(Object.assign({}, ...res.map(r => r.fer || {})))) { store.days[k] = store.days[k] || {}; store.days[k].fer = true; }
-      closeModal(); aplicarMarcacoes();
+      // fotos e marcações manuais: cada turno vai para a competência do dia em que começou (cria o mês se ainda não existir)
+      const porMes = {}, ps = soltas.map(x => ({ ...x, role: x.papel || 'E', ms: new Date(x.t).getTime() })).filter(p => !isNaN(p.ms)).sort((a, b) => a.ms - b.ms);
+      for (const d of montarDias(ps)) { const k = competenciaDe(d.key); (porMes[k] = porMes[k] || []).push(...d.ps); }
+      closeModal();
+      const chaves = Object.keys(porMes).sort();
+      if (!chaves.length || comDia.length) aplicarMarcacoes();
+      const resumo = [];
+      for (const k of chaves) {
+        const nova = !store.meses[k];
+        if (k !== store.mesAtivo) trocarMes(k);
+        let n = 0; for (const x of porMes[k]) if (!store.marc.some(m => m.t === x.t)) { store.marc.push({ id: uid(), t: x.t, fonte: x.fonte, role: x.role }); n++; }
+        aplicarMarcacoes(); resumo.push({ k, n, nova });
+      }
+      if (resumo.length && (resumo.length > 1 || resumo[0].k !== origem || resumo[0].nova)) {
+        modal(`<h2>Marcações lançadas</h2>${resumo.map(r => `<div class="mrow"><span><b>${fmtMes(r.k)}</b>${r.nova ? ' · competência criada' : ''}</span><b>${r.n} marcaç${r.n === 1 ? 'ão' : 'ões'}</b></div>`).join('')}
+          <p class="hint">Cada marcação foi para a competência do dia em que o turno começou, pelo fechamento do ponto. Você está vendo ${fmtMes(store.mesAtivo)}; troque no topo da página.</p>
+          <div class="bar"><button class="act" id="rsOk">Ok</button></div>`, () => { $('rsOk').onclick = closeModal; });
+      }
     };
   });
+}
+
+// Tipo de cada marcação: E = entrada, S = saída, I1 = saída p/ intervalo, I2 = volta do intervalo.
+const PAPEIS = [['E', 'Entrada'], ['S', 'Saída'], ['I1', 'Saída p/ intervalo'], ['I2', 'Volta do intervalo']];
+const NOME_PAPEL = { E: 'entrada', S: 'saída', I1: 'saída p/ intervalo', I2: 'volta do intervalo' };
+// Monta os dias a partir de marcações com tipo, em ordem de horário. O dia é o da entrada (turno que atravessa a meia-noite fica inteiro nele).
+function montarDias(ps) {
+  const dias = []; let ab = null; const hh = p => p.t.slice(11, 16);
+  for (const p of ps) {
+    if (p.role === 'E') { ab = { key: p.t.slice(0, 10), e1: hh(p), s1: '', e2: '', s2: '', ps: [p], ultimo: p.ms }; dias.push(ab); continue; }
+    if (!ab || (p.ms - ab.ultimo) / 3600000 > 18 || ab.s2) { ab = { key: p.t.slice(0, 10), e1: '', s1: '', e2: '', s2: '', ps: [], ultimo: p.ms }; dias.push(ab); } // marcação sem entrada: dia incompleto
+    ab.ps.push(p); ab.ultimo = p.ms;
+    if (p.role === 'I1') ab.s1 = hh(p); else if (p.role === 'I2') ab.e2 = hh(p); else ab.s2 = hh(p);
+  }
+  return dias;
+}
+// Sugestão de tipo para cada marcação (o usuário confirma): em sequência, entrada → saída; intervalo se houver 3 ou 4 marcações no turno.
+function papeisSugeridos(lista) {
+  const ps = lista.map(x => ({ t: x.t, ms: new Date(x.t).getTime() })).filter(q => !isNaN(q.ms)).sort((a, b) => a.ms - b.ms), m = {};
+  for (const g of agrupar(ps)) { const seq = g.length === 1 ? ['E'] : g.length === 2 ? ['E', 'S'] : g.length === 3 ? ['E', 'I1', 'I2'] : ['E', 'I1', 'I2', 'S']; g.forEach((q, i) => { m[q.t] = seq[i]; }); }
+  return m;
+}
+
+// Junta marcações seguidas em um mesmo turno (entrada, saída, e intervalo se houver). `ps` já ordenado por `ms`.
+function agrupar(ps) {
+  const grupos = []; let cur = [];
+  for (const p of ps) {
+    if (!cur.length) { cur = [p]; continue; }
+    const gap = (p.ms - cur[cur.length - 1].ms) / 3600000, n = cur.length;
+    const ok = n === 1 ? gap <= 16 : n === 2 ? gap <= 6 : n === 3 ? gap <= 16 : false;
+    if (ok) cur.push(p); else { grupos.push(cur); cur = [p]; }
+  }
+  if (cur.length) grupos.push(cur);
+  return grupos;
+}
+// Competência (mês em que o período do ponto termina) a que um dia pertence, pela regra de fechamento. Ex.: fechamento dia 20 → 21/10 é de 11/2026.
+function competenciaDe(chave) {
+  const [y, m, d] = chave.split('-').map(Number), F = Math.min(Math.max(1, +store.cfg.c_fech || 20), new Date(y, m, 0).getDate());
+  const dt = new Date(y, m - 1 + (d > F ? 1 : 0), 1);
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}`;
 }
 
 // Usa o calendário de turnos para saber a que dia/turno a marcação pertence e se é entrada ou saída.
@@ -1704,29 +1787,32 @@ function mapCal(p) {
 
 function aplicarMarcacoes() {
   for (const k in store.days) { const s = store.days[k]; if (s.fromMarc) { s.e1 = s.s1 = s.e2 = s.s2 = ''; delete s.fromMarc; delete s.odd; } }
-  const ps0 = store.marc.map(m => ({ t: m.t, dia: m.dia, ms: new Date(m.t).getTime() })).filter(p => !isNaN(p.ms)).sort((a, b) => a.ms - b.ms);
-  const porDia = {}, ps = [];
+  const ps0 = store.marc.map(m => ({ t: m.t, dia: m.dia, role: m.role, ms: new Date(m.t).getTime() })).filter(p => !isNaN(p.ms)).sort((a, b) => a.ms - b.ms);
+  const porDia = {}, ps = [], comPapel = [];
   for (const p of ps0) {
     if (p.dia) { (porDia[p.dia] = porDia[p.dia] || []).push(p); continue; } // marcação de espelho/cartão: o dia já vem no documento
+    if (p.role) { comPapel.push(p); continue; }                              // foto ou marcação manual com tipo escolhido: entrada, saída, intervalo
     const r = mapCal(p); if (r) (porDia[r.key] = porDia[r.key] || []).push({ ...p, role: r.role }); else ps.push(p);
   }
-  const grupos = []; let cur = [];
-  for (const p of ps) {
-    if (!cur.length) { cur = [p]; continue; }
-    const gap = (p.ms - cur[cur.length - 1].ms) / 3600000, n = cur.length;
-    const ok = n === 1 ? gap <= 16 : n === 2 ? gap <= 6 : n === 3 ? gap <= 16 : false;
-    if (ok) cur.push(p); else { grupos.push(cur); cur = [p]; }
-  }
-  if (cur.length) grupos.push(cur);
+  const grupos = agrupar(ps);
   let ini = $('c_ini').value, fim = $('c_fim').value;
   for (const g of grupos) { const k = g[0].t.slice(0, 10); porDia[k] = (porDia[k] || []).concat(g).sort((a, b) => a.ms - b.ms); }
   for (const [key, g] of Object.entries(porDia)) {
     const st = store.days[key] = store.days[key] || {};
-    if (g.length === 1 && g[0].role === 'S') { st.e1 = ''; st.s1 = g[0].t.slice(11, 16); st.e2 = st.s2 = ''; }
-    else [st.e1, st.s1, st.e2, st.s2] = [0, 1, 2, 3].map(i => g[i] ? g[i].t.slice(11, 16) : '');
+    const h = i => g[i] ? g[i].t.slice(11, 16) : '';
+    if (g.length === 1) { if (g[0].role === 'S') { st.e1 = st.s1 = st.e2 = ''; st.s2 = h(0); } else { st.e1 = h(0); st.s1 = st.e2 = st.s2 = ''; } }
+    else if (g.length === 2) { st.e1 = h(0); st.s2 = h(1); st.s1 = st.e2 = ''; } // só entrada e saída: não inventa intervalo
+    else { st.e1 = h(0); st.s1 = h(1); st.e2 = h(2); st.s2 = h(3); }               // com intervalo, preenchido como no documento/foto
     if (g.some(p => p.dia) && !st.t) st.t = 'normal'; // dia com batidas no cartão de ponto = dia trabalhado
     st.fromMarc = true; if (g.length % 2) st.odd = true; else delete st.odd;
     if (!ini || key < ini) ini = key; if (!fim || key > fim) fim = key;
+  }
+  for (const d of montarDias(comPapel)) {
+    const st = store.days[d.key] = store.days[d.key] || {};
+    st.e1 = d.e1; st.s1 = d.s1; st.e2 = d.e2; st.s2 = d.s2;
+    if (!st.t && $('c_esc').value !== 'sem') st.t = 'normal'; // em escala rotativa, dia com marcação é dia trabalhado
+    st.fromMarc = true; if (d.e1 && d.s2 && !!d.s1 === !!d.e2) delete st.odd; else st.odd = true;
+    if (!ini || d.key < ini) ini = d.key; if (!fim || d.key > fim) fim = d.key;
   }
   if (ini !== $('c_ini').value || fim !== $('c_fim').value) { $('c_ini').value = ini; $('c_fim').value = fim; store.cfg.c_ini = ini; store.cfg.c_fim = fim; }
   save(); renderDays(); updateSums(); renderMarc(); renderInicio();
@@ -1734,7 +1820,7 @@ function aplicarMarcacoes() {
 
 function renderMarc() {
   const L = [...store.marc].sort((a, b) => a.t.localeCompare(b.t));
-  $('mList').innerHTML = L.length ? L.map(m => `<span class="mchip">${m.fonte === 'foto' ? '📷' : '✍'} ${m.t.slice(8, 10)}/${m.t.slice(5, 7)} ${m.t.slice(11, 19)} <button data-id="${m.id}" title="Remover">✕</button></span>`).join('') : '<span class="hint">Nenhuma marcação lançada por foto ou manual.</span>';
+  $('mList').innerHTML = L.length ? L.map(m => `<span class="mchip">${m.fonte === 'foto' ? '📷' : '✍'} ${m.t.slice(8, 10)}/${m.t.slice(5, 7)} ${m.t.slice(11, 19)}${m.role ? ' · ' + NOME_PAPEL[m.role] : ''} <button data-id="${m.id}" title="Remover">✕</button></span>`).join('') : '<span class="hint">Nenhuma marcação lançada por foto ou manual.</span>';
   document.querySelectorAll('#mList button').forEach(b => b.onclick = () => { store.marc = store.marc.filter(m => m.id !== b.dataset.id); aplicarMarcacoes(); });
 }
 $('mCam').onchange = ev => { lerMarcacoes([...ev.target.files]); ev.target.value = ''; };
