@@ -74,6 +74,7 @@
   .card h2 { font-size:1.02rem; font-weight:800; letter-spacing:-.01em; margin:0 0 12px; }
   .hint { font-size:.82rem; color:var(--mut); line-height:1.5; margin:8px 0 0; }
   .sub { color:var(--mut); margin:0 0 14px; font-size:.9rem; }
+  .cols.duo { grid-template-columns:1fr 1fr !important; }
   .cols { display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:12px 14px; }
   label { display:block; font-size:.78rem; font-weight:700; color:var(--mut); margin-bottom:5px; }
 
@@ -164,6 +165,7 @@
   .trow { display:grid; grid-template-columns:40px 1fr 92px 92px 64px auto auto auto; gap:6px; align-items:center; margin:6px 0; }
   .trow input[type=color] { padding:0; height:40px; }
   @media (max-width:560px) { .trow { grid-template-columns:40px 1fr 1fr; } }
+  #tbPonto.semInt th:nth-child(5), #tbPonto.semInt th:nth-child(6), #tbPonto.semInt td:nth-child(5), #tbPonto.semInt td:nth-child(6) { display:none; }
   .rvrow .chk { flex:1 1 220px; min-width:0; }
   .rvrow .chk input[type=datetime-local] { width:auto; flex:1; min-width:0; }
   .rvrow { display:grid; gap:6px; }
@@ -415,18 +417,22 @@
     </div>
 
     <div class="card">
-      <h2>Horário padrão (atalho)</h2>
-      <div class="cols">
-        <div><label>Entrada</label><input id="f_e1" type="time" value="08:00"></div>
-        <div><label>Saída p/ intervalo</label><input id="f_s1" type="time" value="12:00"></div>
-        <div><label>Volta</label><input id="f_e2" type="time" value="13:00"></div>
-        <div><label>Saída</label><input id="f_s2" type="time" value="17:00"></div>
+      <h2>Horário padrão</h2>
+      <div class="cols duo">
+        <div style="grid-column:1/-1"><label for="f_turno">Turno</label><select class="cfg" id="f_turno" aria-label="Turno"></select></div>
+        <div><label>Entrada</label><input class="cfg" id="f_e1" type="time" value="08:00"></div>
+        <div><label>Saída</label><input class="cfg" id="f_s2" type="time" value="17:00"></div>
+      </div>
+      <label class="chk" style="margin-top:14px"><input class="cfg" type="checkbox" id="f_int"> Eu bato o intervalo (saída e volta)</label>
+      <div class="cols duo" id="fInt" style="display:none;margin-top:10px">
+        <div><label>Saída p/ intervalo</label><input class="cfg" id="f_s1" type="time" value="12:00"></div>
+        <div><label>Volta do intervalo</label><input class="cfg" id="f_e2" type="time" value="13:00"></div>
       </div>
       <div class="bar">
         <button class="sec" id="btnFill">Preencher dias normais vazios</button>
         <button class="sec" id="btnClear">Limpar ponto</button>
       </div>
-      <p class="hint">Depois ajuste só os dias diferentes (horas extras, noite, faltas, feriados). Se você só bate entrada e saída, deixe o intervalo em branco. Turno que passa da meia-noite: a saída menor que a entrada conta como dia seguinte.</p>
+      <p class="hint">Escolha o turno (ele preenche a entrada e a saída) ou digite os horários. Marque o intervalo só se você bate o ponto nele. Depois ajuste apenas os dias diferentes. Turno que passa da meia-noite: a saída menor que a entrada conta como dia seguinte.</p>
     </div>
     <div class="card scroll">
       <table id="tbPonto">
@@ -610,6 +616,8 @@ function dateRange() {
 function renderDays() {
   const c = cfg(), tb = document.querySelector('#tbPonto tbody'); tb.innerHTML = '';
   for (const k in store.days) { const d = store.days[k]; if (d.s1 && !d.e2 && !d.s2) { d.s2 = d.s1; d.s1 = ''; } } // formato antigo: dia só com entrada e saída
+  const comInt = $('f_int').checked || Object.values(store.days).some(d => d.s1 || d.e2); // o intervalo só aparece se marcado ou se algum dia já tem
+  $('tbPonto').classList.toggle('semInt', !comInt); $('fInt').style.display = $('f_int').checked ? '' : 'none';
   for (const key of dateRange()) {
     const d = parseKey(key), st = store.days[key] || {}, t = st.t || autoType(key, c);
     const tr = document.createElement('tr'); tr.className = t; tr.dataset.key = key;
@@ -957,7 +965,7 @@ $('tbPonto').addEventListener('input', ev => {
 });
 
 $('btnFill').onclick = () => {
-  const c = cfg(), v = ['e1', 's1', 'e2', 's2'].map(f => $('f_' + f).value);
+  const c = cfg(), comInt = $('f_int').checked, v = [$('f_e1').value, comInt ? $('f_s1').value : '', comInt ? $('f_e2').value : '', $('f_s2').value];
   for (const key of dateRange()) {
     const st = store.days[key] = store.days[key] || {}, t = st.t || autoType(key, c);
     if (t === 'normal' && !st.e1 && !st.s1 && !st.e2 && !st.s2) {
@@ -1839,6 +1847,7 @@ function novoMes(key, base) {
   return { cfg, days: {}, marc: [], paid: {}, extra: [], holInfo: null };
 }
 function carregarTela() {
+  montarTurnosPadrao();
   document.querySelectorAll('.cfg').forEach(e => { const v = store.cfg[e.id]; if (v === undefined) return; if (e.type === 'checkbox') e.checked = !!v; else e.value = v; });
   document.querySelectorAll('.paid').forEach(e => { e.value = store.paid[e.id] || ''; });
   renderDays(); updateSums(); renderMarc(); renderExtra(); renderMesBar(); renderInicio();
@@ -1931,6 +1940,32 @@ $('hFile').onchange = async ev => {
 };
 document.querySelectorAll('[data-go]').forEach(b => { if (!b.onclick) b.onclick = () => show(b.dataset.go); });
 
+// ===== Turnos no horário padrão =====
+function montarTurnosPadrao() {
+  const sel = $('f_turno'), atual = sel.value, base = turnos12h().filter(t => !t.folga), esc = escAtiva();
+  const extra = esc ? esc.turnos.filter(t => !t.folga && t.ini && t.fim && !base.some(b => b.ini === t.ini && b.fim === t.fim)) : [];
+  const op = t => `<option value="${t.ini}|${t.fim}">${esc2(t.nome)} · ${t.ini}–${t.fim}</option>`;
+  sel.innerHTML = `<option value="">Personalizado (digito os horários)</option>
+    <optgroup label="Turno de dia">${base.filter(t => !/^Noite/.test(t.nome)).map(op).join('')}</optgroup>
+    <optgroup label="Turno da noite">${base.filter(t => /^Noite/.test(t.nome)).map(op).join('')}</optgroup>
+    ${extra.length ? `<optgroup label="Do seu calendário">${extra.map(op).join('')}</optgroup>` : ''}`;
+  if ([...sel.options].some(o => o.value === atual)) sel.value = atual;
+}
+const esc2 = s => String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+function sugerirIntervalo() { // 1h de refeição no meio do turno, para você ajustar
+  if (!$('f_int').checked || !$('f_e1').value || !$('f_s2').value) return;
+  const ini = hm($('f_e1').value); let dur = hm($('f_s2').value) - ini; if (!(dur > 0)) dur += 1440;
+  const meio = Math.floor((dur - 60) / 2); if (meio <= 0) return;
+  $('f_s1').value = fmtMin(ini + meio); $('f_e2').value = fmtMin(ini + meio + 60);
+}
+$('f_turno').addEventListener('change', () => {
+  const v = $('f_turno').value; if (!v) return;
+  const [ini, fim] = v.split('|'); $('f_e1').value = ini; $('f_s2').value = fim; sugerirIntervalo(); readCfgInto(); save();
+});
+$('f_int').addEventListener('change', () => { if ($('f_int').checked && !store.cfg.f_intAjustado) sugerirIntervalo(); readCfgInto(); save(); });
+['f_e1', 'f_s2'].forEach(id => $(id).addEventListener('input', () => { $('f_turno').value = ''; })); // digitou à mão: volta para "Personalizado"
+['f_s1', 'f_e2'].forEach(id => $(id).addEventListener('input', () => { store.cfg.f_intAjustado = true; }));
+
 // ===== Início =====
 load();
 escInit(); aplicarTema();
@@ -1941,6 +1976,7 @@ if (!store.cfg.c_fech) { // primeiro uso com fechamento: dia 20, período 21 a 2
   store.cfg.c_ref = `${ref.getFullYear()}-${pad(ref.getMonth() + 1)}`;
   Object.assign(store.cfg, periodoFechamento(store.cfg.c_ref, 20, 'prox'));
 }
+montarTurnosPadrao();
 for (const [id, v] of Object.entries(store.cfg)) { const e = $(id); if (e) { if (e.type === 'checkbox') e.checked = !!v; else e.value = v; } }
 for (const [id, v] of Object.entries(store.paid)) { const e = $(id); if (e) e.value = v; }
 renderDays(); updateSums();

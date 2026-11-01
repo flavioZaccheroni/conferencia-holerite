@@ -1,6 +1,6 @@
 // Serviço de uso sem internet. Guarda o app no aparelho; os dados do usuário ficam no localStorage, não aqui.
 // Ao publicar uma versão nova do app, troque o número em VERSAO para os aparelhos baixarem a atualização.
-const VERSAO = 'conferencia-20261101-1412';
+const VERSAO = 'conferencia-20261101-1509';
 const NUCLEO = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png'];
 // bibliotecas de leitura de foto/PDF: baixadas uma vez e guardadas para uso sem internet
 const EXTERNOS = ['cdn.jsdelivr.net', 'cdnjs.cloudflare.com', 'tessdata.projectnaptha.com', 'unpkg.com'];
