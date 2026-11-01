@@ -1207,7 +1207,7 @@ function renderEscala() {
   const root = $('escRoot'), e = escAtiva(), ui = store.esc.ui;
   $('fabEdit').classList.toggle('on', V.edit);
   if (!e) {
-    root.innerHTML = `<div class="card"><h2>Nenhuma escala criada</h2><p class="hint">Crie sua escala (turnos, ciclo e calendário). Ela preenche o ponto automaticamente e usa a duração de cada turno como jornada.</p>
+    root.innerHTML = `<div class="card"><h2>Nenhuma escala criada</h2><p class="hint">Escolha o tipo (como 4x2), o turno e a data de início: o calendário já nasce pronto, com os dias de trabalho, o DSR e as folgas em cores diferentes. Ele também organiza o seu ponto.</p>
       <div class="bar"><button class="act" data-act="nova">Criar escala</button><button class="sec" data-act="menu">⋮ Backup / configurações</button></div></div>`;
     return;
   }
@@ -1234,7 +1234,7 @@ function renderEscala() {
 
 $('escRoot').addEventListener('click', ev => {
   const b = ev.target.closest('[data-act]'); if (!b) return; const a = b.dataset.act;
-  if (a === 'nova') openEscalaEditor(null);
+  if (a === 'nova') openAssistenteEscala();
   else if (a === 'menu') openMenu();
   else if (a === 'modo') { V.modo = b.dataset.v; renderEscala(); }
   else if (a === 'mes') { V.m = +b.dataset.m; V.modo = 'mes'; renderEscala(); }
@@ -1252,7 +1252,7 @@ $('escRoot').addEventListener('click', ev => {
   }
 });
 $('escRoot').addEventListener('change', ev => { if (ev.target.id === 'escSel') { store.esc.ativa = ev.target.value; persistEsc(); } });
-$('fabEdit').onclick = () => { const e = escAtiva(); if (!e) return openEscalaEditor(null); V.edit = !V.edit; if (V.edit && !V.sel && e.turnos[0]) V.sel = e.turnos[0].id; renderEscala(); };
+$('fabEdit').onclick = () => { const e = escAtiva(); if (!e) return openAssistenteEscala(); V.edit = !V.edit; if (V.edit && !V.sel && e.turnos[0]) V.sel = e.turnos[0].id; renderEscala(); };
 $('fabAdd').onclick = () => openDay(V.last || keyOf(new Date()));
 
 // ---- dia: turno + eventos/notas ----
@@ -1279,7 +1279,8 @@ function openDay(key) {
 // ---- menu lateral (como o do app) ----
 function openMenu() {
   modal(`<h2>Sua escala de trabalho</h2>
-    <button class="menuitem" data-m="nova">➕ Criar escala</button>
+    <button class="menuitem" data-m="nova">➕ Criar escala (4x2, 12x36, 6x1…)</button>
+    <button class="menuitem" data-m="avancada">🛠 Criar escala avançada (turnos e dias à mão)</button>
     <button class="menuitem" data-m="editar">✏️ Editar escalas</button>
     <button class="menuitem" data-m="apagar">🗑 Apagar escala</button>
     <button class="menuitem" data-m="ciclo">🔁 Gerar escala por ciclo (12x36, 6x1, 5x2...)</button>
@@ -1290,7 +1291,7 @@ function openMenu() {
     $('mmClose').onclick = closeModal;
     document.querySelectorAll('#mBody [data-m]').forEach(b => b.onclick = () => {
       const m = b.dataset.m;
-      if (m === 'nova') openEscalaEditor(null); else if (m === 'editar') openLista('editar'); else if (m === 'apagar') openLista('apagar');
+      if (m === 'nova') openAssistenteEscala(); else if (m === 'avancada') openEscalaEditor(null); else if (m === 'editar') openLista('editar'); else if (m === 'apagar') openLista('apagar');
       else if (m === 'ciclo') openCiclo(); else if (m === 'itens') openItens(); else if (m === 'backup') openBackup(); else openCfg();
     });
   });
@@ -1313,6 +1314,81 @@ function openLista(modo) {
 }
 
 // ---- criar / editar escala ----
+// ---- assistente: tipo de escala + turno + data → calendário completo ----
+const TIPOS_ESCALA = [
+  { id: '4x2', nome: '4x2: trabalha 4 dias, folga 2', x: 4, y: 2, dsr: true },
+  { id: '5x2', nome: '5x2: trabalha 5 dias, folga 2', x: 5, y: 2, dsr: true },
+  { id: '6x1', nome: '6x1: trabalha 6 dias, folga 1', x: 6, y: 1, dsr: true },
+  { id: '5x1', nome: '5x1: trabalha 5 dias, folga 1', x: 5, y: 1, dsr: true },
+  { id: '3x1', nome: '3x1: trabalha 3 dias, folga 1', x: 3, y: 1, dsr: true },
+  { id: '2x2', nome: '2x2: trabalha 2 dias, folga 2', x: 2, y: 2, dsr: false },
+  { id: '12x36', nome: '12x36: trabalha 1 dia, folga 1', x: 1, y: 1, dsr: false },
+  { id: 'x', nome: 'Outra (eu informo os dias)', x: 4, y: 2, dsr: true },
+];
+const COR_DSR = '#9aa5b1', COR_FOLGA = '#6cf08d', COR_TRABALHO = '#34a5d6';
+const sequenciaCiclo = (x, y, dsr) => { const seq = Array(x).fill('T'); for (let i = 0; i < y; i++) seq.push(dsr && i === 0 ? 'D' : 'F'); return seq; }; // T = trabalho, D = DSR, F = folga
+function openAssistenteEscala() {
+  const base = turnos12h().filter(t => !t.folga), hoje = new Date();
+  const op = t => `<option value="${t.ini}|${t.fim}|${esc2(t.nome)}">${esc2(t.nome)} · ${t.ini}–${t.fim}</option>`;
+  modal(`<h2>Criar escala</h2>
+    <label>Nome da escala</label><input id="aNome" value="Minha escala">
+    <label style="margin-top:12px">Tipo de escala</label>
+    <select id="aTipo">${TIPOS_ESCALA.map(t => `<option value="${t.id}">${esc2(t.nome)}</option>`).join('')}</select>
+    <div class="cols duo" id="aCustom" style="display:none;margin-top:10px"><div><label>Dias de trabalho</label><input id="aX" type="number" min="1" max="30" value="4"></div><div><label>Dias de folga</label><input id="aY" type="number" min="0" max="30" value="2"></div></div>
+    <label class="chk" style="margin-top:12px"><input type="checkbox" id="aDsr" checked> O 1º dia de folga é o DSR (descanso semanal)</label>
+    <label style="margin-top:12px">Turno</label>
+    <select id="aTurno"><option value="">Personalizado (digito os horários)</option>
+      <optgroup label="Turno de dia">${base.filter(t => !/^Noite/.test(t.nome)).map(op).join('')}</optgroup>
+      <optgroup label="Turno da noite">${base.filter(t => /^Noite/.test(t.nome)).map(op).join('')}</optgroup></select>
+    <div class="cols duo" style="margin-top:10px"><div><label>Entrada</label><input id="aIni" type="time" value="08:00"></div><div><label>Saída</label><input id="aFim" type="time" value="17:00"></div></div>
+    <div class="cols duo" style="margin-top:12px"><div><label>Jornada do contrato (por dia)</label><input id="aJorn" type="time" value="${$('c_jorn').value || '08:00'}"></div>
+      <div><label>A escala vale por</label><select id="aMeses"><option value="3">3 meses</option><option value="6">6 meses</option><option value="12" selected>12 meses</option><option value="24">24 meses</option></select></div></div>
+    <p class="hint">A jornada do contrato (ex.: 08:00) é a base das horas extras: o que passar dela em cada dia conta como extra.</p>
+    <label style="margin-top:12px">Primeiro dia de trabalho de um ciclo</label><input id="aData" type="date" value="${keyOf(hoje)}">
+    <p class="hint" id="aDica" style="margin-top:6px"></p>
+    <h3>Como fica</h3><div id="aPrev"></div>
+    <div class="bar"><button class="act" id="aOk">Criar escala</button><button class="sec" id="aNo">Cancelar</button></div>`, () => {
+    const tipo = () => TIPOS_ESCALA.find(t => t.id === $('aTipo').value);
+    const xy = () => tipo().id === 'x' ? { x: Math.max(1, +$('aX').value || 1), y: Math.max(0, +$('aY').value || 0) } : { x: tipo().x, y: tipo().y };
+    const corTurno = () => { const nome = $('aTurno').value.split('|')[2]; const t = base.find(b => esc2(b.nome) === nome); return t ? t.cor : COR_TRABALHO; };
+    const prever = () => {
+      const { x, y } = xy(), dsr = $('aDsr').checked && y >= 1, seq = sequenciaCiclo(x, y, dsr), data = $('aData').value;
+      $('aDica').textContent = (x === 1 ? 'Escolha um dia em que você trabalhou.' : `Escolha uma data em que você começou um bloco de trabalho (o 1º dos ${x} dias).`) + ` O ciclo tem ${x + y} dias e se repete.`;
+      if (!data) { $('aPrev').innerHTML = '<p class="hint">Informe a data.</p>'; return; }
+      const cor = corTurno(), d0 = parseKey(data); let lead = d0.getDay(); if (store.esc.ui.segunda) lead = (lead + 6) % 7;
+      let h = '<div></div>'.repeat(lead);
+      for (let i = 0; i < 28; i++) {
+        const d = new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() + i, 12), k = seq[i % seq.length], c = k === 'T' ? cor : k === 'D' ? COR_DSR : COR_FOLGA;
+        h += `<div class="cell" style="background:${c};color:${ink(c)};border-color:${c}">${d.getDate()}</div>`;
+      }
+      const nF = y - (dsr ? 1 : 0), chip = (c, tx) => `<span class="mchip" style="background:${c};color:${ink(c)}">${tx}</span>`;
+      $('aPrev').innerHTML = `<div class="cal mini">${dayHeaders()}${h}</div><div class="chips" style="margin-top:8px">${chip(cor, 'Trabalho ' + x + (x === 1 ? ' dia' : ' dias'))}${dsr ? chip(COR_DSR, 'DSR 1 dia') : ''}${nF > 0 ? chip(COR_FOLGA, 'Folga ' + nF + (nF === 1 ? ' dia' : ' dias')) : ''}</div>`;
+    };
+    $('aTipo').onchange = () => { const t = tipo(); $('aCustom').style.display = t.id === 'x' ? '' : 'none'; $('aDsr').checked = t.dsr; prever(); };
+    $('aTurno').onchange = () => { const v = $('aTurno').value; if (v) { const [i, f] = v.split('|'); $('aIni').value = i; $('aFim').value = f; } prever(); };
+    ['aIni', 'aFim'].forEach(id => $(id).addEventListener('input', () => { $('aTurno').value = ''; prever(); }));
+    ['aX', 'aY', 'aDsr', 'aData'].forEach(id => $(id).addEventListener('input', prever));
+    $('aNo').onclick = closeModal; prever();
+    $('aOk').onclick = () => {
+      const { x, y } = xy(), ini = $('aIni').value, fim = $('aFim').value, data = $('aData').value, dsr = $('aDsr').checked && y >= 1;
+      if (!ini || !fim) return alert('Informe a entrada e a saída do turno.'); if (!data) return alert('Informe o primeiro dia de trabalho.');
+      const T = { id: uid(), nome: $('aTurno').value.split('|')[2] ? $('aTurno').selectedOptions[0].textContent.split(' · ')[0] : `Turno ${ini}–${fim}`, ini, fim, int: 0, cor: corTurno(), folga: false };
+      const D = { id: uid(), nome: 'DSR', ini: '', fim: '', int: 0, cor: COR_DSR, folga: true, dsr: true }, F = { id: uid(), nome: 'Folga', ini: '', fim: '', int: 0, cor: COR_FOLGA, folga: true };
+      const nF = y - (dsr ? 1 : 0), turnos = [T]; if (dsr) turnos.push(D); if (nF > 0) turnos.push(F);
+      const seq = sequenciaCiclo(x, y, dsr), idPor = { T: T.id, D: D.id, F: F.id }, d0 = parseKey(data), meses = +$('aMeses').value;
+      const fimD = new Date(d0.getFullYear(), d0.getMonth() + meses, d0.getDate() - 1, 12), dias = {};
+      for (let i = 0, d = new Date(d0); d <= fimD; i++, d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 12)) dias[keyOf(d)] = idPor[seq[i % seq.length]];
+      const e = { id: uid(), nome: $('aNome').value.trim() || 'Minha escala', desc: tipo().nome, empresa: '', ini: data, fim: keyOf(fimD), turnos, dias };
+      store.esc.list.push(e); store.esc.ativa = e.id;
+      // liga a escala ao ponto: dias de trabalho viram dias normais e a jornada do contrato é a base das extras
+      $('c_esc').value = 'cal'; $('c_jorn').value = $('aJorn').value || '08:00'; $('c_jornFix').checked = true; readCfgInto();
+      const hojeD = new Date(), dentro = keyOf(hojeD) >= data && keyOf(hojeD) <= keyOf(fimD), ref = dentro ? hojeD : d0;
+      V.y = ref.getFullYear(); V.m = ref.getMonth(); V.modo = 'mes'; V.sel = null; V.edit = false;
+      closeModal(); montarTurnosPadrao(); persistEsc();
+    };
+  });
+}
+
 function novaEscala() {
   const t0 = new Date();
   return { id: uid(), nome: '', desc: '', empresa: '', ini: keyOf(new Date(t0.getFullYear(), t0.getMonth(), 1, 12)), fim: keyOf(new Date(t0.getFullYear() + 2, t0.getMonth(), 1, 12)),
@@ -1359,7 +1435,7 @@ function openEscalaEditor(id) {
 
 // ---- gerar por ciclo ----
 function openCiclo() {
-  const e = escAtiva(); if (!e) return openEscalaEditor(null);
+  const e = escAtiva(); if (!e) return openAssistenteEscala();
   let seq = [], ini = `${V.y}-${pad(V.m + 1)}-01`, fim = e.fim || keyOf(new Date(V.y + 1, V.m, 1, 12)), over = true;
   const work = e.turnos.find(t => !t.folga), off = e.turnos.find(t => t.folga);
   const chip = (t, extra = '') => `<button class="chip" ${extra} style="background:${t.cor};color:${ink(t.cor)};border-color:${t.cor};flex:0 1 auto;padding:8px 12px">${esc(t.nome)}</button>`;
