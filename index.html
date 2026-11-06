@@ -601,7 +601,7 @@ const pad = n => String(n).padStart(2, '0');
 const keyOf = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const parseKey = k => { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d, 12); };
 function autoType(key, c) {
-  if (c.esc === 'cal') { const t = turnoAt(key); return t && !t.folga ? 'normal' : (t && t.dsr ? 'dsr' : 'folga'); }
+  if (c.esc === 'cal') { const t = turnoAt(key); return t && !t.folga ? (feriadoNome(key) ? 'feriado' : 'normal') : (t && t.dsr ? 'dsr' : 'folga'); } // dia de trabalho em feriado marcado na escala vale 100%
   if (c.esc === 'cic') {
     const ref = c.cini ? parseKey(c.cini) : parseKey($('c_ini').value || key), per = c.cx + c.cy;
     const diff = Math.round((parseKey(key) - ref) / 86400000);
@@ -973,7 +973,7 @@ $('btnFill').onclick = () => {
   const c = cfg(), comInt = $('f_int').checked, v = [$('f_e1').value, comInt ? $('f_s1').value : '', comInt ? $('f_e2').value : '', $('f_s2').value];
   for (const key of dateRange()) {
     const st = store.days[key] = store.days[key] || {}, t = st.t || autoType(key, c);
-    if (t === 'normal' && !st.e1 && !st.s1 && !st.e2 && !st.s2) {
+    if ((t === 'normal' || (t === 'feriado' && c.esc === 'cal')) && !st.e1 && !st.s1 && !st.e2 && !st.s2) {
       const tt = c.esc === 'cal' ? turnoAt(key) : null;
       if (tt && !tt.folga) [st.e1, st.s1, st.e2, st.s2] = punchesFromTurno(tt);
       else if (c.esc !== 'cal') [st.e1, st.s1, st.e2, st.s2] = v;
