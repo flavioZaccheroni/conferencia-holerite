@@ -712,8 +712,8 @@ function calcAll() {
   const uEf = c.divMes && fimD ? diasMes - dsrDias : uteis; // método da empresa: dias do mês de competência (mês em que o período termina) menos os dias de DSR
   const dsr = c.dsrCalc && uEf > 0 ? (he50 + he75 + hef + he100) / uEf * dsrDias : 0;
   const dsrn = c.dsrCalc && c.dsrN && uEf > 0 ? (adicNot + redNot) / uEf * dsrDias : 0; // reflexo do adicional noturno, evento separado no holerite
-  const falta = faltas * base / 30, dsrp = c.dsrP && c.esc === 'sem' ? faltas * base / 30 : 0, atr = bkAll ? 0 : deficit / 60 * h;
-  const cred = (bank50 + bankF) * c.bfat, deb = bkAll ? deficit : 0;
+  const falta = faltas * base / 30, dsrp = c.dsrP && c.esc === 'sem' ? faltas * base / 30 : 0, atr = c.banco ? 0 : deficit / 60 * h; // com banco de horas, as horas que faltaram são debitadas do banco (o cartão traz "HORAS COMP - BH"), não descontadas
+  const cred = (bank50 + bankF) * c.bfat, deb = c.banco ? deficit : 0;
   const banco = { on: c.banco, ant: c.bsaldo, cred, deb, novo: c.bsaldo + cred - deb };
   const brutoModelo = c.sal + per + he50 + he75 + hef + he100 + adicNot + redNot + interj + dsr + dsrn - falta - dsrp - atr;
   const ex = store.extra || [], soma = f => ex.filter(f).reduce((s, x) => s + (+x.valor || 0), 0);
@@ -735,7 +735,7 @@ function calcAll() {
       { k: 'dsrn', label: 'Reflexo do adicional noturno no DSR', v: dsrn },
       { k: 'falta', label: `Desconto de faltas (${faltas} dia${faltas === 1 ? '' : 's'})`, v: falta, desc: true },
       { k: 'dsrp', label: 'Desconto de DSR perdido', v: dsrp, desc: true },
-      { k: 'atr', label: 'Desconto de atrasos / horas faltantes', v: atr, min: bkAll ? 0 : deficit, desc: true },
+      { k: 'atr', label: 'Desconto de atrasos / horas faltantes', v: atr, min: c.banco ? 0 : deficit, desc: true },
       { k: 'inss', label: 'INSS', v: inss, desc: true },
       { k: 'irrf', label: 'IRRF', v: irrf, desc: true },
     ] };
@@ -864,7 +864,7 @@ function compare() {
     const pv = paidV(k), dias = dateRange().length, nd = (paidH('dsr') || 0) / 60; if (!(nd > 0) || pv == null || !(base > 0)) return;
     const esp = base / (dias - nd) * nd, d = pv - esp, imp = base * nd / pv; // imp = dias úteis implícitos no valor pago
     if (Math.abs(d) <= TOL_REAIS) chk.push({ cls: 'ok', txt: `${nome}: ${brl(base)} ÷ ${dias - nd} dias úteis × ${nd} DSR = ${brl(esp)}; holerite ${brl(pv)} ✔` });
-    else if (Math.abs(imp - Math.round(imp)) < 0.05 && imp <= Math.max(dias, 31) - nd && imp >= dias - nd - 3) chk.push({ cls: 'ok', txt: `${nome}: o valor pago (${brl(pv)}) corresponde a ${brl(base)} ÷ ${Math.round(imp)} dias úteis × ${nd} DSR (o período tem ${dias} dias; a empresa usa o nº de dias do mês de competência e não do período, ${vr(d)} em relação ao cálculo por período). Método coerente entre os meses.` });
+    else if (Math.abs(imp - Math.round(imp)) < 0.05 && Math.round(imp) <= Math.max(dias, 31) - nd && Math.round(imp) >= dias - nd - 3) chk.push({ cls: 'ok', txt: `${nome}: o valor pago (${brl(pv)}) corresponde a ${brl(base)} ÷ ${Math.round(imp)} dias úteis × ${nd} DSR (o período tem ${dias} dias; a empresa usa o nº de dias do mês de competência e não do período, ${vr(d)} em relação ao cálculo por período). Método coerente entre os meses.` });
     else chk.push({ cls: d < 0 ? 'bad' : 'warn', txt: `${nome}: ${brl(base)} ÷ ${dias - nd} dias úteis × ${nd} DSR = ${brl(esp)}; holerite ${brl(pv)} (${vr(d)})` });
   };
   chkDsr('dsr', ['he50', 'he75', 'hef', 'he100'].reduce((s, k) => s + (paidV(k) || 0), 0), 'DSR sobre extras');
@@ -1711,6 +1711,7 @@ function detectarMarcacoes(texto, per) {
     const dm = linha.match(/\b(\d{2})\/(\d{2})(?:\/(\d{2,4}))?\b/); if (!dm) continue;
     const horas = [...linha.matchAll(/\b([01]?\d|2[0-3]):([0-5]\d)\b/g)];
     const y = dm[3] ? (dm[3].length === 2 ? 2000 + +dm[3] : +dm[3]) : anoDe(+dm[2], +dm[1]), key = `${y}-${pad(+dm[2])}-${pad(+dm[1])}`;
+    if (horas.length && /feriado/i.test(linha)) tipos[key] = 'feriado'; // dia trabalhado em feriado: o turno inteiro vale 100%
     if (!horas.length) { // linha de espelho sem horas: folga, DSR ou feriado
       if (/\bdsr\b/i.test(linha)) tipos[key] = 'dsr'; else if (/folga|feriado/i.test(linha)) tipos[key] = 'folga';
       if (/feriado/i.test(linha)) fer[key] = true;
