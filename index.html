@@ -627,7 +627,7 @@ function renderDays() {
   for (const key of dateRange()) {
     const d = parseKey(key), st = store.days[key] || {}, t = st.t || autoType(key, c);
     const tr = document.createElement('tr'); tr.className = t; tr.dataset.key = key;
-    const fn = feriadoNome(key), dif = c.esc === 'cal' && st.t && turnoAt(key) && !['falta', 'atestado'].includes(st.t) && st.t !== autoType(key, c);
+    const fn = feriadoNome(key), dif = c.esc === 'cal' && st.t && turnoAt(key) && !['falta', 'atestado'].includes(st.t) && st.t !== autoType(key, c) && !(temBatida(st) && st.t === 'normal' && ['folga', 'dsr'].includes(autoType(key, c)));
     tr.innerHTML = `<td>${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${DOW[d.getDay()]}${fn ? ` <span class="ferTag" title="${esc(fn)}">★ feriado</span>` : ''}${dif ? ' <span class="difTag" title="O tipo deste dia é diferente do que a escala indica">≠ escala</span>' : ''}</td>
       <td><select data-f="t">${Object.entries(TYPES).map(([k, v]) => `<option value="${k}"${k === t ? ' selected' : ''}>${v}</option>`).join('')}</select></td>
       ${[['e1', 'Entrada'], ['s2', 'Saída'], ['s1', 'Intervalo: saída (se houver)'], ['e2', 'Intervalo: volta (se houver)']].map(([f, nome]) => `<td data-l="${nome}"><input type="time" data-f="${f}" value="${st[f] || ''}"></td>`).join('')}
@@ -985,7 +985,7 @@ $('btnFill').onclick = () => {
 };
 $('btnAlinha').onclick = () => {
   if ($('c_esc').value !== 'cal') { if (!escAtiva()) return alert('Crie a escala primeiro (aba Escala).'); if (!confirm('O ponto ainda não usa o calendário da aba Escala. Ligar agora?')) return; $('c_esc').value = 'cal'; readCfgInto(); }
-  const c = cfg(), keys = dateRange().filter(k => { const t = (store.days[k] || {}).t; return t && turnoAt(k) && !['falta', 'atestado', autoType(k, c)].includes(t); });
+  const c = cfg(), keys = dateRange().filter(k => { const t = (store.days[k] || {}).t; const at = autoType(k, c); return t && turnoAt(k) && !['falta', 'atestado', at].includes(t) && !(temBatida(store.days[k]) && (at === 'folga' || at === 'dsr') && t === 'normal'); });
   if (!keys.length) { save(); renderDays(); updateSums(); return alert('O ponto já está alinhado com a escala.'); }
   if (!confirm(`${keys.length} dia(s) do ponto estão diferentes da escala (trabalho, folga, DSR ou feriado). Alinhar todos com a escala? Horários batidos e faltas/atestados são mantidos.`)) return;
   keys.forEach(k => delete store.days[k].t);
@@ -1914,6 +1914,9 @@ function mapCal(p) {
   return melhor;
 }
 
+// Dia com marcações é dia trabalhado normal (turno noturno: entra num dia e sai no outro, o dia é o da entrada). Só vira 'feriado' se a escala marcar feriado nesse dia de trabalho.
+function tipoImportado(key) { return $('c_esc').value === 'cal' && turnoAt(key) && !turnoAt(key).folga && feriadoNome(key) ? 'feriado' : 'normal'; }
+function temBatida(st) { return !!(st && (st.e1 || st.s1 || st.e2 || st.s2)); }
 function aplicarMarcacoes() {
   for (const k in store.days) { const s = store.days[k]; if (s.fromMarc) { s.e1 = s.s1 = s.e2 = s.s2 = ''; delete s.fromMarc; delete s.odd; } }
   const ps0 = store.marc.map(m => ({ t: m.t, dia: m.dia, role: m.role, ms: new Date(m.t).getTime() })).filter(p => !isNaN(p.ms)).sort((a, b) => a.ms - b.ms);
@@ -1932,14 +1935,14 @@ function aplicarMarcacoes() {
     if (g.length === 1) { if (g[0].role === 'S') { st.e1 = st.s1 = st.e2 = ''; st.s2 = h(0); } else { st.e1 = h(0); st.s1 = st.e2 = st.s2 = ''; } }
     else if (g.length === 2) { st.e1 = h(0); st.s2 = h(1); st.s1 = st.e2 = ''; } // só entrada e saída: não inventa intervalo
     else { st.e1 = h(0); st.s1 = h(1); st.e2 = h(2); st.s2 = h(3); }               // com intervalo, preenchido como no documento/foto
-    if (g.some(p => p.dia) && !st.t) st.t = $('c_esc').value === 'cal' && turnoAt(key) ? autoType(key, cfg()) : 'normal'; // dia com batidas: trabalhado (na escala em calendário, segue o tipo do dia: trabalho, feriado, folga ou DSR)
+    if (g.some(p => p.dia) && !st.t) st.t = tipoImportado(key); // dia com batidas = dia trabalhado (feriado da escala vale 100%)
     st.fromMarc = true; if (g.length % 2) st.odd = true; else delete st.odd;
     if (!ini || key < ini) ini = key; if (!fim || key > fim) fim = key;
   }
   for (const d of montarDias(comPapel)) {
     const st = store.days[d.key] = store.days[d.key] || {};
     st.e1 = d.e1; st.s1 = d.s1; st.e2 = d.e2; st.s2 = d.s2;
-    if (!st.t && $('c_esc').value !== 'sem') st.t = $('c_esc').value === 'cal' && turnoAt(d.key) ? autoType(d.key, cfg()) : 'normal'; // em escala rotativa, dia com marcação é dia trabalhado
+    if (!st.t && $('c_esc').value !== 'sem') st.t = tipoImportado(d.key); // em escala rotativa, dia com marcação é dia trabalhado
     st.fromMarc = true; if (d.e1 && d.s2 && !!d.s1 === !!d.e2) delete st.odd; else st.odd = true;
     if (!ini || d.key < ini) ini = d.key; if (!fim || d.key > fim) fim = d.key;
   }
